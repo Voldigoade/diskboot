@@ -1,5 +1,7 @@
 # DiskBoot interface
 
+Preserved design intent for a discontinued prototype. Visual, accessibility, DPI and complete workflow validation remain incomplete; see [STATUS.md](STATUS.md).
+
 Native Windows product interface for a user selecting an ISO and a secondary SSD. Task clarity and accurate safety status take priority over decoration. The signature is the persistent distinction between protected Windows disks and the chosen Linux allocation.
 
 The runtime source is `ui/main.cpp`: `Theme::margin` (24 logical pixels), body text (16) and heading (24). Segoe UI normal and semibold follow Windows conventions. Native system colors, selection, focus, disabled controls, file picker and confirmation dialogs own their visual states and respect user settings. There are no custom color tokens or animations.

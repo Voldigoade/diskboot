@@ -7,3 +7,5 @@ The old application, embedded GRUB, and vendored archive implementation have bee
 [ULLI](https://github.com/rltvty2/ulli) at `48a28feb63be934185c0b1c6ed2462bc6e04d723` was inspected for boot-flow and compatibility ideas. No ULLI source was copied. Its BCD/default-firmware changes and broad boot assumptions were not adopted.
 
 See [the audit](docs/upstream-audit.md) and [third-party notices](THIRD_PARTY.md).
+
+Inherited alpha tags refer to historical BootThatISO revisions, not validated DiskBoot releases. The fork's inherited `v1.0.0` tag was removed during closure to avoid implying a stable DiskBoot release; the original tag remains in the upstream repository. No commits or legal provenance were removed.

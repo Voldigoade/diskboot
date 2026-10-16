@@ -14,11 +14,11 @@ Windows API contracts were retrieved through the Microsoft Learn MCP during impl
 
 ## Candidate Ubuntu/Kubuntu path
 
-[Ubuntu's ISO boot guidance](https://help.ubuntu.com/community/Grub2/ISOBoot) and the [Casper manual](https://manpages.ubuntu.com/manpages/noble/man7/casper.7.html) describe loopback and RAM-backed live media. The candidate uses the exact ISO's `casper/vmlinuz`, `casper/initrd`, and EFI files, a hash-specific recovery marker, and a fixed destination ISO name. It does not use firmware disk ordering or a fixed GPT partition number.
+[Ubuntu's ISO boot guidance](https://help.ubuntu.com/community/Grub2/ISOBoot) and the [Casper manual](https://manpages.ubuntu.com/manpages/noble/man7/casper.7.html) describe loopback and RAM-backed live media. The final candidate stages the exact ISO's `casper/vmlinuz`, `casper/initrd`, and EFI files on the new ESP. The ISO remains on NTFS recovery media in a target-specific hash directory. GRUB searches for the staged kernel; Casper receives the matching ISO path. This adapter was staged and hashed on a disposable VHDX, but never boot-validated. The earlier loopback adapter reached GRUB in a VM and failed because that GRUB could not read the NTFS recovery partition. See [the final status](../STATUS.md).
 
 The RAM preflight is a conservative policy of ISO size plus half its size plus 4 GiB. It is not a measured minimum. `toram` alone does not prove that `/isodevice` has been released or that the installer can reread a modified GPT. Those transitions must be observed in the exact ISO's live environment.
 
-[Ubuntu's Secure Boot chain](https://documentation.ubuntu.com/security/security-features/platform-protections/secure-boot/) requires appropriate firmware trust, shim, GRUB and kernel validation. Copying the distribution's files does not establish trust, revocation status, GRUB prefix resolution, or available loopback/filesystem modules. The laboratory profile refuses enabled or unknown host Secure Boot state. No security setting is changed by the application.
+[Ubuntu's Secure Boot chain](https://documentation.ubuntu.com/security/security-features/platform-protections/secure-boot/) requires appropriate firmware trust, shim, GRUB and kernel validation. Copying the distribution's files does not establish trust, revocation status, GRUB prefix resolution, or available filesystem modules. The laboratory profile refuses enabled or unknown Secure Boot state; an explicitly declared disabled state and sufficient RAM for a disposable guest can be supplied instead of host values. Those declarations do not prove guest settings. No security setting is changed by the application. The separate VM harness sets only its disposable guest's configuration.
 
 ## openSUSE
 
