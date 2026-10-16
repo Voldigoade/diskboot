@@ -1,6 +1,10 @@
-build/
+build*/
+out/
 *.exe
 *.dll
-platforms/
-.iso
-isos/
+*.iso
+*.vhd
+*.vhdx
+*.user
+.vs/
+__pycache__/
