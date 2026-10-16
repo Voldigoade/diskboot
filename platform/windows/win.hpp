@@ -24,6 +24,7 @@ struct Handle {
 std::string           hash_bytes(std::span<const unsigned char> data);
 std::string           hash_file(const std::filesystem::path &path);
 std::string           hash_handle(HANDLE handle);
+std::string           hash_range(HANDLE handle, Bytes offset, Bytes size);
 void                  durable_json(const std::filesystem::path &path, const Json &value, bool exclusive);
 Json                  read_json(const std::filesystem::path &path);
 std::filesystem::path state_directory();

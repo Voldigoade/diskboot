@@ -379,20 +379,6 @@ void Storage::format(const Disk &disk, const Partition &partition, const Operati
     wmi_.call(volumes.front().Get(), L"Format",
               {{"FileSystem", op.filesystem}, {"FileSystemLabel", op.label}, {"Full", false}, {"Force", false}});
 }
-void Storage::mount(const Disk &disk, const Partition &partition, const std::filesystem::path &path) {
-    auto object = find_partition(wmi_, disk, partition);
-    wmi_.call(object.Get(), L"AddAccessPath", {{"AccessPath", utf8(path.wstring()) + "\\"}});
-}
-void Storage::unmount(const Partition &partition, const std::filesystem::path &path) {
-    auto objects = wmi_.query(L"SELECT * FROM MSFT_Partition");
-    for (auto &object : objects)
-        if (text_property(object.Get(), L"__PATH") == partition.wmi_path &&
-            normalized_guid(text_property(object.Get(), L"Guid")) == partition.guid) {
-            wmi_.call(object.Get(), L"RemoveAccessPath", {{"AccessPath", utf8(path.wstring()) + "\\"}});
-            return;
-        }
-    throw Error("Mount cleanup requires manual inspection: partition identity changed");
-}
 std::string stable_id(const Identity &identity) {
     const auto bytes = Json(identity).dump();
     return hash_bytes({reinterpret_cast<const unsigned char *>(bytes.data()), bytes.size()});

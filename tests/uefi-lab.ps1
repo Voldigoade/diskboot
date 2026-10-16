@@ -21,6 +21,7 @@ Copy-Item -LiteralPath $source -Destination $copy
 $sourceHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
 $vmName = 'DiskBoot-' + [guid]::NewGuid().ToString('N')
 New-VM -Name $vmName -Generation 2 -MemoryStartupBytes $MemoryBytes -VHDPath $copy -Path $testRoot | Out-Null
+Set-VM -Name $vmName -AutomaticCheckpointsEnabled $false
 Set-VMFirmware -VMName $vmName -EnableSecureBoot $SecureBoot -SecureBootTemplate MicrosoftUEFICertificateAuthority
 $firmware = Get-VMFirmware -VMName $vmName
 if ($firmware.SecureBoot.ToString() -ne $SecureBoot) { throw 'Guest Secure Boot setting was not verified' }

@@ -47,11 +47,30 @@ static Iso iso() {
     i.path      = "installer.iso";
     i.sha256    = std::string(64, 'a');
     i.size      = 6 * GiB;
-    i.profile   = "ubuntu-casper-loopback";
+    i.profile   = "ubuntu-casper-staged-kernel";
     i.candidate = true;
     return i;
 }
 int main() {
+    test("Secure Boot enabled or unknown refuses candidate", [] {
+        auto image         = iso();
+        image.ram_required = 12 * GiB;
+        for (const auto &status : {"enabled", "unknown"})
+            refuses([&] { check_candidate_environment(image, {true, status, 32 * GiB}, "", 0); });
+    });
+    test("candidate RAM preflight", [] {
+        auto image         = iso();
+        image.ram_required = 12 * GiB;
+        refuses([&] { check_candidate_environment(image, {true, "disabled", 8 * GiB}, "", 0); });
+        check_candidate_environment(image, {true, "disabled", 32 * GiB}, "", 0);
+    });
+    test("explicit disposable guest settings are separate from host", [] {
+        auto image         = iso();
+        image.ram_required = 12 * GiB;
+        check_candidate_environment(image, {true, "enabled", 32 * GiB}, "disabled", 16 * GiB);
+        refuses([&] { check_candidate_environment(image, {true, "disabled", 32 * GiB}, "enabled", 16 * GiB); });
+        refuses([&] { check_candidate_environment(image, {true, "disabled", 32 * GiB}, "disabled", 8 * GiB); });
+    });
     test("500GB total budget and existing free extent", [] {
         auto inv = fixture();
         auto p   = make_plan(inv, inv.disks[0].identity, iso(), parse_size("500GB"), "");

@@ -2,8 +2,37 @@
 #include <array>
 #include <deque>
 #include <set>
+#include <cstring>
 
 namespace diskboot {
+static void validate_efi(std::span<const unsigned char> bytes) {
+    require(bytes.size() >= sizeof(IMAGE_DOS_HEADER), "Truncated EFI image");
+    IMAGE_DOS_HEADER dos{};
+    std::memcpy(&dos, bytes.data(), sizeof(dos));
+    require(dos.e_magic == IMAGE_DOS_SIGNATURE && dos.e_lfanew >= 0 &&
+                add(static_cast<Bytes>(dos.e_lfanew), sizeof(IMAGE_NT_HEADERS64)) <= bytes.size(),
+            "Invalid EFI header bounds");
+    IMAGE_NT_HEADERS64 pe{};
+    std::memcpy(&pe, bytes.data() + dos.e_lfanew, sizeof(pe));
+    require(pe.Signature == IMAGE_NT_SIGNATURE && pe.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64 &&
+                pe.FileHeader.SizeOfOptionalHeader >= sizeof(IMAGE_OPTIONAL_HEADER64) &&
+                pe.OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC &&
+                pe.OptionalHeader.Subsystem == IMAGE_SUBSYSTEM_EFI_APPLICATION,
+            "Boot component is not an x64 EFI application");
+}
+void check_candidate_environment(const Iso &iso, const Firmware &host, const std::string &guest_secure_boot,
+                                 Bytes guest_ram) {
+    require(iso.candidate && iso.ram_required > 0, "Boot profile has no RAM preflight");
+    require(host.uefi, "UEFI host required");
+    if (guest_secure_boot.empty()) {
+        require(host.secure_boot == "disabled", "Candidate profile refuses enabled or unknown Secure Boot state");
+        require(host.ram >= iso.ram_required, "Insufficient physical RAM for candidate toram strategy");
+    } else {
+        require(guest_secure_boot == "disabled",
+                "Candidate profile requires an explicitly Secure-Boot-disabled disposable guest");
+        require(guest_ram >= iso.ram_required, "Insufficient declared guest RAM for candidate toram strategy");
+    }
+}
 static std::uint32_t both32(const unsigned char *p) {
     auto le = std::uint32_t(p[0]) | std::uint32_t(p[1]) << 8 | std::uint32_t(p[2]) << 16 | std::uint32_t(p[3]) << 24;
     auto be = std::uint32_t(p[7]) | std::uint32_t(p[6]) << 8 | std::uint32_t(p[5]) << 16 | std::uint32_t(p[4]) << 24;
@@ -52,8 +81,17 @@ IsoImage::IsoImage(const std::filesystem::path &path)
             name.find("amd64") != std::string::npos && files_.contains("casper/vmlinuz") &&
             files_.contains("casper/initrd") && files_.contains("efi/boot/bootx64.efi") &&
             files_.contains("efi/boot/grubx64.efi")) {
-            metadata.profile      = "ubuntu-casper-loopback";
-            metadata.candidate    = true;
+            metadata.profile   = "ubuntu-casper-staged-kernel";
+            metadata.candidate = true;
+            for (const auto &component : {"efi/boot/bootx64.efi", "efi/boot/grubx64.efi", "efi/boot/mmx64.efi"})
+                if (files_.contains(component))
+                    validate_efi(file(component, 32 * MiB));
+            Bytes boot_bytes = 0;
+            for (const auto &component : {"casper/vmlinuz", "casper/initrd", "efi/boot/bootx64.efi",
+                                          "efi/boot/grubx64.efi", "efi/boot/mmx64.efi"})
+                if (files_.contains(component))
+                    boot_bytes = add(boot_bytes, files_.at(component).size);
+            require(boot_bytes <= GiB - 128 * MiB, "Kernel, initrd and EFI files exceed the ESP budget");
             metadata.ram_required = add(add(length_, length_ / 2), 4 * GiB);
             metadata.limitation = "Candidate only: shim/GRUB relocation, toram source release, same-disk installation, "
                                   "and Secure Boot have not been validated in a UEFI VM";
@@ -179,7 +217,7 @@ void IsoImage::extract_efi(const std::filesystem::path &destination) {
         if (!files_.contains(source) && std::string(name) == "mmx64.efi")
             continue;
         auto bytes = file(source, 32 * MiB);
-        require(bytes.size() > 64 && bytes[0] == 'M' && bytes[1] == 'Z', "Invalid EFI image header");
+        validate_efi(bytes);
         auto   path = destination / name;
         Handle output(
             CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_FLAG_WRITE_THROUGH, nullptr));
@@ -194,15 +232,40 @@ void IsoImage::extract_efi(const std::filesystem::path &destination) {
         require(hash_file(path) == hash_bytes(bytes), "EFI extraction hash mismatch");
     }
 }
+void IsoImage::copy_boot_file(const std::string &name, const std::filesystem::path &destination) {
+    require(name == "casper/vmlinuz" || name == "casper/initrd", "Unexpected boot component");
+    const auto &entry = files_.at(name);
+    require(!entry.directory && entry.size && entry.size <= GiB - 128 * MiB, "Invalid boot component size");
+    Handle output(
+        CreateFileW(destination.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_FLAG_WRITE_THROUGH, nullptr));
+    win_check(output.value != INVALID_HANDLE_VALUE, "Create staged boot component");
+    for (Bytes done = 0; done < entry.size;) {
+        auto  bytes   = read(add(entry.offset, done), std::min<Bytes>(MiB, entry.size - done));
+        DWORD written = 0;
+        win_check(WriteFile(output.value, bytes.data(), static_cast<DWORD>(bytes.size()), &written, nullptr) &&
+                      written == bytes.size(),
+                  "Copy boot component");
+        done += bytes.size();
+    }
+    win_check(FlushFileBuffers(output.value), "Flush boot component");
+    CloseHandle(output.value);
+    output.value = INVALID_HANDLE_VALUE;
+    require(hash_file(destination) == hash_range(handle_.value, entry.offset, entry.size),
+            "Boot component hash mismatch");
+}
 std::string ubuntu_config(const std::string &marker) {
     require(marker.size() == 64 &&
                 std::ranges::all_of(marker, [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); }),
             "Invalid recovery marker");
-    return "set timeout=10\nsearch --no-floppy --file --set=root /diskboot/" + marker +
-           ".marker\nset isofile=/diskboot/installer.iso\nmenuentry 'DiskBoot Ubuntu installer (unverified laboratory "
-           "profile)' {\n"
-           "  loopback loop $isofile\n  linux (loop)/casper/vmlinuz boot=casper iso-scan/filename=$isofile toram "
-           "noprompt noeject ---\n"
-           "  initrd (loop)/casper/initrd\n}\n";
+    const auto folder = "/diskboot/" + marker;
+    return "set default=0\nset timeout=10\nmenuentry 'DiskBoot Ubuntu installer (unverified laboratory profile)' {\n"
+           "  search --no-floppy --file --set=root " +
+           folder +
+           "/vmlinuz\n"
+           "  linux " +
+           folder + "/vmlinuz boot=casper iso-scan/filename=" + folder +
+           "/installer.iso toram noprompt noeject ---\n"
+           "  initrd " +
+           folder + "/initrd\n}\n";
 }
 }

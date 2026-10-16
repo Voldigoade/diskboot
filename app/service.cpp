@@ -1,4 +1,5 @@
 #include "service.hpp"
+#include <winioctl.h>
 #include <algorithm>
 
 namespace diskboot {
@@ -59,12 +60,24 @@ static void write_file(const std::filesystem::path &path, const std::string &dat
               "Write boot configuration");
     win_check(FlushFileBuffers(file.value), "Flush boot configuration");
 }
-static void verify_mount(const std::filesystem::path &path, const Partition &partition) {
-    std::wstring mount = path.wstring() + L"\\";
-    wchar_t      actual[1024]{};
-    win_check(GetVolumeNameForVolumeMountPointW(mount.c_str(), actual, 1024), "Verify new volume mount");
-    require(!partition.volume_path.empty() && lower(utf8(actual)) == lower(partition.volume_path),
-            "Mount resolves to another volume");
+static void verify_volume(const Partition &partition, const Disk &disk) {
+    auto device = wide(partition.volume_path);
+    require(!device.empty() && device.ends_with(L'\\'), "Missing volume GUID root");
+    device.pop_back();
+    Handle handle(
+        CreateFileW(device.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr));
+    win_check(handle.value != INVALID_HANDLE_VALUE, "Open prepared volume for extent verification");
+    VOLUME_DISK_EXTENTS extents{};
+    DWORD               count = 0;
+    win_check(DeviceIoControl(handle.value, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, nullptr, 0, &extents, sizeof(extents),
+                              &count, nullptr),
+              "Verify prepared volume extent");
+    require(count >= sizeof(extents) && extents.NumberOfDiskExtents == 1 &&
+                extents.Extents[0].DiskNumber == disk.number && extents.Extents[0].StartingOffset.QuadPart >= 0 &&
+                extents.Extents[0].ExtentLength.QuadPart > 0 &&
+                partition.range == Range{static_cast<Bytes>(extents.Extents[0].StartingOffset.QuadPart),
+                                         static_cast<Bytes>(extents.Extents[0].ExtentLength.QuadPart)},
+            "Prepared volume maps outside its approved partition");
 }
 std::filesystem::path prepare_virtual(const Request &request, const Plan &approved,
                                       const std::function<void(const std::string &)> &progress) {
@@ -74,19 +87,10 @@ std::filesystem::path prepare_virtual(const Request &request, const Plan &approv
     require(image.metadata.sha256 == approved.iso.sha256 && image.metadata.size == approved.iso.size,
             "ISO changed after review");
     const auto host = firmware();
-    require(host.uefi, "UEFI host required");
-    if (request.guest_secure_boot.empty()) {
-        require(host.secure_boot == "disabled",
-                "Laboratory profile has no verified Secure Boot chain; enabled or unknown state is refused");
-        require(host.ram >= image.metadata.ram_required, "Insufficient physical RAM for candidate toram strategy");
-    } else {
-        require(request.guest_secure_boot == "disabled",
-                "The candidate profile is available only for an explicitly Secure-Boot-disabled disposable guest");
-        require(request.guest_ram >= image.metadata.ram_required,
-                "Insufficient declared guest RAM for candidate toram strategy");
-    }
+    check_candidate_environment(image.metadata, host, request.guest_secure_boot, request.guest_ram);
     VirtualBackend backend(request.lab_vhd);
     backend.authorize(approved.target);
+    const auto media_id     = stable_id(approved.target);
     const auto directory    = state_directory();
     const auto journal_path = directory / L"transactions" / (stable_id(approved.target) + ".json");
     require(!std::filesystem::exists(journal_path),
@@ -118,18 +122,12 @@ std::filesystem::path prepare_virtual(const Request &request, const Plan &approv
             auto it      = std::ranges::find(current.partitions, op.range, &Partition::range);
             require(it != current.partitions.end(), "Prepared partition missing");
             const auto partition = *it;
-            auto       mount = directory / (stable_id(approved.target) + (op.type == EspType ? "-efi" : "-recovery"));
-            require(!std::filesystem::exists(mount), "Stale mount directory requires inspection");
-            state.journal["mount"] = utf8(mount.wstring());
-            checkpoint("mount-intent");
-            backend.storage().mount(current, partition, mount);
-            verify_mount(mount, partition);
-            revalidate(backend, approved.target, state.expected);
-            checkpoint("mount-verified");
+            const auto mount     = std::filesystem::path(wide(partition.volume_path));
+            verify_volume(partition, current);
             auto before_write = [&] {
-                revalidate(backend, approved.target, state.expected);
+                const auto verified = revalidate(backend, approved.target, state.expected);
                 require(approved.allocation.contains(partition.range), "Boot files outside approved allocation");
-                verify_mount(mount, partition);
+                verify_volume(partition, verified);
             };
             before_write();
             checkpoint("boot-files-intent");
@@ -138,26 +136,32 @@ std::filesystem::path prepare_virtual(const Request &request, const Plan &approv
                 image.extract_efi(mount / L"EFI" / L"BOOT");
                 for (const auto &file : std::filesystem::directory_iterator(mount / L"EFI" / L"BOOT"))
                     files.push_back(std::filesystem::relative(file.path(), mount));
-                const auto config = ubuntu_config(image.metadata.sha256);
-                for (const auto &folder : {std::filesystem::path(L"EFI/BOOT"), std::filesystem::path(L"EFI/ubuntu"),
-                                           std::filesystem::path(L"boot/grub")}) {
+                const auto boot_folder = std::filesystem::path(L"diskboot") / media_id;
+                before_write();
+                std::filesystem::create_directories(mount / boot_folder);
+                image.copy_boot_file("casper/vmlinuz", mount / boot_folder / L"vmlinuz");
+                before_write();
+                image.copy_boot_file("casper/initrd", mount / boot_folder / L"initrd");
+                files.push_back(boot_folder / L"vmlinuz");
+                files.push_back(boot_folder / L"initrd");
+                const auto config = ubuntu_config(media_id);
+                for (const auto &folder : {std::filesystem::path(L"EFI\\BOOT"), std::filesystem::path(L"EFI\\ubuntu"),
+                                           std::filesystem::path(L"boot\\grub")}) {
                     before_write();
                     std::filesystem::create_directories(mount / folder);
                     write_file(mount / folder / L"grub.cfg", config);
                     files.push_back(folder / L"grub.cfg");
                 }
             } else {
-                std::filesystem::create_directories(mount / L"diskboot");
-                image.copy_iso(mount / L"diskboot" / L"installer.iso");
-                require(hash_file(mount / L"diskboot" / L"installer.iso") == image.metadata.sha256,
+                const auto recovery_folder = std::filesystem::path(L"diskboot") / media_id;
+                std::filesystem::create_directories(mount / recovery_folder);
+                image.copy_iso(mount / recovery_folder / L"installer.iso");
+                require(hash_file(mount / recovery_folder / L"installer.iso") == image.metadata.sha256,
                         "Staged ISO hash mismatch");
                 before_write();
-                const auto marker = std::filesystem::path(L"diskboot") / (image.metadata.sha256 + ".marker");
-                write_file(mount / marker, "DiskBoot laboratory recovery media\n");
-                files.push_back(L"diskboot/installer.iso");
-                files.push_back(marker);
-                durable_json(mount / L"diskboot" / L"plan.json", Json(approved), true);
-                files.push_back(L"diskboot/plan.json");
+                files.push_back(recovery_folder / L"installer.iso");
+                durable_json(mount / recovery_folder / L"plan.json", Json(approved), true);
+                files.push_back(recovery_folder / L"plan.json");
             }
             for (const auto &file : files) {
                 before_write();
@@ -167,16 +171,6 @@ std::filesystem::path prepare_virtual(const Request &request, const Plan &approv
                                                   {"sha256", hash_file(mount / file)}});
             }
             checkpoint("boot-files-verified");
-            before_write();
-            checkpoint("unmount-intent");
-            backend.storage().unmount(partition, mount);
-            wchar_t removed[1024]{};
-            auto    root = mount.wstring() + L"\\";
-            require(!GetVolumeNameForVolumeMountPointW(root.c_str(), removed, 1024),
-                    "Mount removal could not be verified");
-            std::filesystem::remove(mount);
-            state.journal.erase("mount");
-            checkpoint("unmount-verified");
         }
         revalidate(backend, approved.target, state.expected);
         state.journal["boot_tested"] = false;

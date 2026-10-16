@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <memory>
 #include <thread>
+#include <iomanip>
+#include <sstream>
 
 using namespace diskboot;
 namespace {
@@ -15,14 +17,29 @@ struct Result {
 struct Theme {
     static constexpr int margin = 24, heading = 24, body = 16;
 };
+std::string human_space(Bytes value) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(value % 1000000000 ? 1 : 0) << static_cast<double>(value) / 1000000000
+        << " GB";
+    return out.str();
+}
+std::string review_text(const Plan &plan) {
+    return "Windows disk: protected. No partition or boot changes.\r\n\r\nTarget: " + plan.target.model + " (" +
+           human_space(plan.target.size) + ")\r\nExisting data: preserved by the planned operations.\r\n\r\n" +
+           human_space(plan.allocation.size) + " total allocation\r\nDiskBoot boot and recovery: " +
+           human_space(plan.allocation.size - plan.linux_space.size) +
+           "\r\nLinux available space: " + human_space(plan.linux_space.size) +
+           "\r\n\r\nPreparation is limited to disposable virtual disks until installer testing is complete.";
+}
 class Window {
     HWND                window_ = nullptr, title_ = nullptr, body_ = nullptr, choose_ = nullptr, lab_ = nullptr;
     HWND                disks_ = nullptr, size_label_ = nullptr, size_ = nullptr, partition_ = nullptr, back_ = nullptr,
-                        next_ = nullptr, status_ = nullptr;
+                        next_ = nullptr, status_ = nullptr, details_ = nullptr;
     HFONT               font_ = nullptr, heading_ = nullptr;
     std::jthread        worker_;
-    bool                busy_ = false;
-    int                 step_ = 0;
+    bool                busy_         = false;
+    bool                show_details_ = false;
+    int                 step_         = 0;
     Request             request_;
     std::optional<Iso>  image_;
     std::optional<Plan> plan_;
@@ -169,7 +186,7 @@ class Window {
         }
         if (step_ == 3 && plan_ && !request_.lab_vhd.empty()) {
             auto message =
-                wide(summarize(*plan_) + "\nThis is a disposable VHD/VHDX laboratory operation. Prepare it?");
+                wide(review_text(*plan_) + "\nThis is a disposable VHD/VHDX laboratory operation. Prepare it?");
             if (MessageBoxW(window_, message.c_str(), L"Confirm virtual disk preparation",
                             MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
                 return;
@@ -200,6 +217,8 @@ class Window {
             ShowWindow(c, SW_HIDE);
         ShowWindow(back_, step_ > 0 && step_ < 4 ? SW_SHOW : SW_HIDE);
         ShowWindow(next_, step_ < 4 ? SW_SHOW : SW_HIDE);
+        ShowWindow(details_, step_ == 3 ? SW_SHOW : SW_HIDE);
+        SetWindowTextW(details_, show_details_ ? L"Hide technical details" : L"Show technical details");
         SetWindowTextW(next_, step_ == 3
                                   ? (request_.lab_vhd.empty() ? L"Prepare (unavailable)" : L"Prepare virtual disk")
                                   : L"Next");
@@ -207,9 +226,8 @@ class Window {
         if (step_ == 0) {
             ShowWindow(choose_, SW_SHOW);
             if (image_)
-                text(body_, image_->distribution + "\r\n" + image_->version +
-                                "\r\nSize: " + std::to_string(image_->size) + " bytes\r\nSHA-256: " + image_->sha256 +
-                                "\r\n\r\n" + image_->limitation);
+                text(body_, image_->distribution + "\r\n" + image_->version + "\r\nSize: " + human_space(image_->size) +
+                                "\r\nSHA-256: " + image_->sha256 + "\r\n\r\n" + image_->limitation);
             else
                 text(body_, "Choose an Ubuntu or Kubuntu ISO to inspect its contents and integrity "
                             "hash.\r\n\r\nPhysical preparation is disabled until UEFI installer testing is complete.");
@@ -227,8 +245,9 @@ class Window {
                  "DiskBoot will use this total space for the Linux installer and the Linux installation.\r\n\r\nChoose "
                  "which NTFS data partition may shrink if sufficient unallocated space does not exist.");
         } else if (step_ == 3 && plan_) {
-            text(body_, summarize(*plan_) + "\r\nThe third-party installer can still modify other disks. No live "
-                                            "installer disk guard is implemented.");
+            text(body_, (show_details_ ? summarize(*plan_) : review_text(*plan_)) +
+                            "\r\nThe third-party installer can still modify other disks. No live "
+                            "installer disk guard is implemented.");
             enabled &= !request_.lab_vhd.empty();
         } else if (step_ == 4)
             text(body_, "The transaction journal records each real phase. Keep DiskBoot open until the operation "
@@ -238,6 +257,7 @@ class Window {
         EnableWindow(choose_, !busy_);
         EnableWindow(lab_, !busy_);
         EnableWindow(disks_, !busy_);
+        EnableWindow(details_, !busy_);
         layout();
     }
     void layout() {
@@ -256,6 +276,7 @@ class Window {
         MoveWindow(partition_, m, rect.bottom - scale(160), width, scale(200), TRUE);
         MoveWindow(status_, m, rect.bottom - scale(104), width, scale(40), TRUE);
         MoveWindow(back_, m, rect.bottom - scale(48), scale(100), scale(32), TRUE);
+        MoveWindow(details_, m + scale(112), rect.bottom - scale(48), scale(220), scale(32), TRUE);
         MoveWindow(next_, rect.right - m - scale(205), rect.bottom - scale(48), scale(205), scale(32), TRUE);
     }
 
@@ -295,6 +316,7 @@ public:
             status_     = control(L"STATIC", L"", 0, 0);
             back_       = control(L"BUTTON", L"Back", WS_TABSTOP, 15);
             next_       = control(L"BUTTON", L"Next", WS_TABSTOP | BS_DEFPUSHBUTTON, 16);
+            details_    = control(L"BUTTON", L"Show technical details", WS_TABSTOP, 17);
             render();
             return 0;
         case WM_SIZE:
@@ -331,6 +353,10 @@ public:
                 break;
             case 16:
                 next();
+                break;
+            case 17:
+                show_details_ = !show_details_;
+                render();
                 break;
             }
             return 0;

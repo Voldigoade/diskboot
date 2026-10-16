@@ -25,8 +25,5 @@ public:
         authorize(disk.identity);
         storage_.format(disk, p, op);
     }
-    Storage &storage() {
-        return storage_;
-    }
 };
 }

@@ -19,8 +19,11 @@ public:
     Iso metadata;
     explicit IsoImage(const std::filesystem::path &path);
     void                       copy_iso(const std::filesystem::path &destination);
+    void                       copy_boot_file(const std::string &name, const std::filesystem::path &destination);
     void                       extract_efi(const std::filesystem::path &destination);
     std::vector<unsigned char> file(const std::string &name, Bytes maximum);
 };
 std::string ubuntu_config(const std::string &marker);
+void        check_candidate_environment(const Iso &iso, const Firmware &host, const std::string &guest_secure_boot,
+                                        Bytes guest_ram);
 }

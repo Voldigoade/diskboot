@@ -87,6 +87,24 @@ std::string hash_handle(HANDLE handle) {
     } while (count);
     return hash.finish();
 }
+std::string hash_range(HANDLE handle, Bytes offset, Bytes size) {
+    LARGE_INTEGER position{};
+    position.QuadPart = static_cast<LONGLONG>(offset);
+    win_check(SetFilePointerEx(handle, position, nullptr, FILE_BEGIN), "Seek source extent");
+    Sha256                     hash;
+    std::vector<unsigned char> buffer(MiB);
+    Bytes                      done = 0;
+    while (done < size) {
+        DWORD count = 0;
+        win_check(
+            ReadFile(handle, buffer.data(), static_cast<DWORD>(std::min<Bytes>(MiB, size - done)), &count, nullptr) &&
+                count,
+            "Read source extent");
+        hash.update({buffer.data(), count});
+        done += count;
+    }
+    return hash.finish();
+}
 std::string hash_file(const std::filesystem::path &path) {
     Handle file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
                             FILE_FLAG_SEQUENTIAL_SCAN, nullptr));

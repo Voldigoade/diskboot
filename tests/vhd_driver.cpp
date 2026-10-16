@@ -25,7 +25,7 @@ int wmain(int argc, wchar_t **argv) {
         image.path      = "storage-test-only";
         image.sha256    = std::string(64, 'a');
         image.size      = 100 * MiB;
-        image.profile   = "ubuntu-casper-loopback";
+        image.profile   = "ubuntu-casper-staged-kernel";
         image.candidate = true;
         auto plan       = make_plan(inventory, target->identity, image, 16 * GiB, lower(utf8(argv[2])), true);
         bool first      = true;

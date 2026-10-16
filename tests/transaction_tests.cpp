@@ -63,7 +63,7 @@ public:
         image.path      = "test.iso";
         image.sha256    = std::string(64, 'a');
         image.size      = GiB;
-        image.profile   = "ubuntu-casper-loopback";
+        image.profile   = "ubuntu-casper-staged-kernel";
         image.candidate = true;
         return make_plan(state, state.disks[0].identity, image, 16 * GiB, "data-guid", true);
     }

@@ -86,7 +86,7 @@ Plan make_plan(const Inventory &inventory, const Identity &target, const Iso &is
                const std::string &source_guid, bool allow_virtual) {
     const auto &disk = resolve(inventory, target);
     check_target(inventory, disk, allow_virtual);
-    require(iso.candidate && iso.profile == "ubuntu-casper-loopback" && iso.sha256.size() == 64,
+    require(iso.candidate && iso.profile == "ubuntu-casper-staged-kernel" && iso.sha256.size() == 64,
             iso.limitation.empty() ? "Unsupported ISO" : iso.limitation);
     require(total && total % target.logical_sector == 0, "Allocation must be a whole number of sectors");
     Plan plan;

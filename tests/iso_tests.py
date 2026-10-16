@@ -47,10 +47,18 @@ def fixture():
     label = b'Kubuntu 24.04.4 LTS "Noble Numbat" - Release amd64\n'
     directory(22, [record('info', 32, len(label))])
     directory(23, [record('boot', 24, BLOCK, 2)])
-    directory(24, [record('bootx64.efi', 33, 100), record('grubx64.efi', 34, 100)])
+    directory(24, [record('bootx64.efi', 33, 512), record('grubx64.efi', 34, 512)])
     image[32 * BLOCK:32 * BLOCK + len(label)] = label
-    image[33 * BLOCK:33 * BLOCK + 2] = b'MZ'
-    image[34 * BLOCK:34 * BLOCK + 2] = b'MZ'
+    for block in (33, 34):
+        efi = bytearray(512)
+        efi[:2] = b'MZ'
+        struct.pack_into('<I', efi, 60, 64)
+        efi[64:68] = b'PE\0\0'
+        struct.pack_into('<H', efi, 68, 0x8664)
+        struct.pack_into('<H', efi, 84, 240)
+        struct.pack_into('<H', efi, 88, 0x20b)
+        struct.pack_into('<H', efi, 156, 10)
+        image[block * BLOCK:block * BLOCK + len(efi)] = efi
     return image
 
 
@@ -75,6 +83,14 @@ def main():
         info = inspect(fixture(), True)
         assert info['candidate'] and info['distribution'] == 'Kubuntu'
         assert 'not been validated' in info['limitation']
+        data = fixture()
+        data[22 * BLOCK:23 * BLOCK] = bytes(BLOCK)
+        trailing_dot = record('INFO.;1', 32, len(b'Kubuntu 24.04.4 LTS "Noble Numbat" - Release amd64\n'))
+        data[22 * BLOCK:22 * BLOCK + len(trailing_dot)] = trailing_dot
+        assert inspect(data, True)['candidate']
+        data = fixture()
+        struct.pack_into('<H', data, 33 * BLOCK + 68, 0xaa64)
+        inspect(data, False)
         inspect(b'not an iso', False)
         data = fixture()
         data[16 * BLOCK + 84] ^= 1
