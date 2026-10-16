@@ -126,7 +126,7 @@ ComPtr<IWbemClassObject> Wmi::call(IWbemClassObject *object, const wchar_t *meth
     require(output, "Storage method returned no result");
     const auto status = number(output.Get(), L"ReturnValue");
     require(status == 0,
-            "Storage method failed or requires reconciliation (provider status " + std::to_string(status) + ")");
+            utf8(method) + " failed or requires reconciliation (provider status " + std::to_string(status) + ")");
     return output;
 }
 static std::string guid_string(const GUID &guid) {
@@ -366,7 +366,7 @@ void Storage::create(const Disk &disk, const Operation &op) {
               {{"Size", op.range.size},
                {"Offset", op.range.offset},
                {"Alignment", MiB},
-               {"GptType", op.type},
+               {"GptType", "{" + op.type + "}"},
                {"AssignDriveLetter", false},
                {"IsHidden", false}});
 }
@@ -397,4 +397,4 @@ std::string stable_id(const Identity &identity) {
     const auto bytes = Json(identity).dump();
     return hash_bytes({reinterpret_cast<const unsigned char *>(bytes.data()), bytes.size()});
 }
-} // namespace diskboot
+}

@@ -31,4 +31,4 @@ public:
     void      unmount(const Partition &partition, const std::filesystem::path &path);
 };
 std::string stable_id(const Identity &identity);
-} // namespace diskboot
+}

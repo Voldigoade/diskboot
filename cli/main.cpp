@@ -29,7 +29,8 @@ int wmain(int argc, wchar_t **argv) {
                 require(i + 1 < argc, "Missing option value");
                 const auto key = utf8(argv[i]);
                 require(key == "--iso" || key == "--disk" || key == "--size" || key == "--partition" ||
-                            key == "--lab-vhd" || key == "--confirm",
+                            key == "--lab-vhd" || key == "--confirm" || key == "--guest-secure-boot" ||
+                            key == "--guest-ram",
                         "Unknown option");
                 require(options.emplace(key, utf8(argv[i + 1])).second, "Duplicate option");
             }
@@ -37,6 +38,13 @@ int wmain(int argc, wchar_t **argv) {
                     "ISO, disk ID and total size required");
             Request request{wide(options["--iso"]), wide(options["--lab-vhd"]), options["--disk"],
                             options["--partition"], parse_size(options["--size"])};
+            if (options.contains("--guest-secure-boot") || options.contains("--guest-ram")) {
+                require(!request.lab_vhd.empty() && options.contains("--guest-secure-boot") &&
+                            options.contains("--guest-ram"),
+                        "Guest settings require a disposable VHD and both guest Secure Boot state and RAM");
+                request.guest_secure_boot = options["--guest-secure-boot"];
+                request.guest_ram         = parse_size(options["--guest-ram"]);
+            }
             if (command == L"prepare")
                 require(!request.lab_vhd.empty(),
                         "Physical preparation is disabled: boot profiles have not passed UEFI installer validation");

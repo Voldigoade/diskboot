@@ -139,7 +139,7 @@ Plan make_plan(const Inventory &inventory, const Identity &target, const Iso &is
     require(linux_start < plan.allocation.end() && plan.allocation.end() - linux_start >= GiB,
             "ISO, EFI, and minimum Linux space exceed total allocation");
     plan.padding = esp_start - plan.allocation.offset;
-    plan.operations.push_back({"create", "", "FAT32", "DiskBoot EFI", EspType, {esp_start, esp_size}, 0});
+    plan.operations.push_back({"create", "", "FAT32", "DISKBOOTEFI", EspType, {esp_start, esp_size}, 0});
     plan.operations.push_back({"create", "", "NTFS", "DiskBoot Recovery", DataType, {stage_start, stage_size}, 0});
     plan.linux_space = {linux_start, plan.allocation.end() - linux_start};
     validate_plan(plan);
@@ -173,7 +173,7 @@ void validate_plan(const Plan &p) {
                     "Invalid creation range");
             bool esp = i == (resized ? 1u : 0u);
             require(op.type == (esp ? EspType : DataType) && op.filesystem == (esp ? "FAT32" : "NTFS") &&
-                        op.label == (esp ? "DiskBoot EFI" : "DiskBoot Recovery") && (esp ? op.range.size == GiB : true),
+                        op.label == (esp ? "DISKBOOTEFI" : "DiskBoot Recovery") && (esp ? op.range.size == GiB : true),
                     "Invalid partition role");
             cursor    = op.range.end();
             accounted = add(accounted, op.range.size);
@@ -198,4 +198,4 @@ std::string summarize(const Plan &p) {
     out << "Boot profile: " << p.iso.profile << " (unverified; physical-disk preparation disabled)\n";
     return out.str();
 }
-} // namespace diskboot
+}

@@ -7,6 +7,8 @@ struct Request {
     std::filesystem::path iso, lab_vhd;
     std::string           disk_id, partition_guid;
     Bytes                 size = 0;
+    std::string           guest_secure_boot;
+    Bytes                 guest_ram = 0;
 };
 Plan                  plan_request(const Request &request);
 Json                  disk_inventory();
@@ -14,4 +16,4 @@ std::filesystem::path prepare_virtual(const Request &request, const Plan &approv
                                       const std::function<void(const std::string &)> &progress);
 Json                  transaction_status();
 Json                  verify_transaction(const std::filesystem::path &journal);
-} // namespace diskboot
+}

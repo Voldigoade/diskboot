@@ -63,7 +63,7 @@ IsoImage::IsoImage(const std::filesystem::path &path)
         metadata.distribution = "openSUSE-compatible layout";
         metadata.profile      = "opensuse-unsupported";
         metadata.limitation   = "openSUSE Leap/Tumbleweed source discovery and same-disk installer behavior are not "
-                              "validated; Ubuntu parameters are not applicable";
+                                "validated; Ubuntu parameters are not applicable";
     }
 }
 void IsoImage::scan() {
@@ -118,6 +118,8 @@ void IsoImage::scan() {
                 std::string name(reinterpret_cast<const char *>(r + 33), r[32]);
                 if (name.ends_with(";1"))
                     name.resize(name.size() - 2);
+                if (name.ends_with('.') && name != "." && name != "..")
+                    name.pop_back();
                 name = lower(name);
                 require(name != "." && name != ".." && name.find_first_of("/\\:") == std::string::npos &&
                             name.find('\0') == std::string::npos,
@@ -203,4 +205,4 @@ std::string ubuntu_config(const std::string &marker) {
            "noprompt noeject ---\n"
            "  initrd (loop)/casper/initrd\n}\n";
 }
-} // namespace diskboot
+}

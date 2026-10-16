@@ -171,4 +171,4 @@ Firmware firmware() {
     }
     return result;
 }
-} // namespace diskboot
+}

@@ -398,7 +398,7 @@ public:
         return static_cast<int>(message.wParam);
     }
 };
-} // namespace
+}
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     try {
         Window window;

@@ -13,10 +13,12 @@ VirtualBackend::VirtualBackend(const std::filesystem::path &path) {
         static_cast<ULONG>(extension == ".vhdx" ? VIRTUAL_STORAGE_TYPE_DEVICE_VHDX : VIRTUAL_STORAGE_TYPE_DEVICE_VHD),
         VIRTUAL_STORAGE_TYPE_VENDOR_MICROSOFT};
     OPEN_VIRTUAL_DISK_PARAMETERS parameters{};
-    parameters.Version = OPEN_VIRTUAL_DISK_VERSION_1;
+    parameters.Version          = OPEN_VIRTUAL_DISK_VERSION_1;
     parameters.Version1.RWDepth = OPEN_VIRTUAL_DISK_RW_DEPTH_DEFAULT;
-    auto status        = OpenVirtualDisk(&type, path.c_str(), static_cast<VIRTUAL_DISK_ACCESS_MASK>(VIRTUAL_DISK_ACCESS_GET_INFO | VIRTUAL_DISK_ACCESS_DETACH), OPEN_VIRTUAL_DISK_FLAG_NONE,
-                                         &parameters, &virtual_disk_.value);
+    auto status                 = OpenVirtualDisk(
+        &type, path.c_str(),
+        static_cast<VIRTUAL_DISK_ACCESS_MASK>(VIRTUAL_DISK_ACCESS_GET_INFO | VIRTUAL_DISK_ACCESS_DETACH),
+        OPEN_VIRTUAL_DISK_FLAG_NONE, &parameters, &virtual_disk_.value);
     require(status == ERROR_SUCCESS, "Cannot open disposable virtual disk (Win32 " + std::to_string(status) + ")");
 }
 void VirtualBackend::authorize(const Identity &identity) {
@@ -38,4 +40,4 @@ void VirtualBackend::authorize(const Identity &identity) {
     require(snapshot.protection_complete && !resolved.boot_chain && resolved.number == device.DeviceNumber,
             "Target is not the explicitly supplied VHD or is in the Windows boot chain");
 }
-} // namespace diskboot
+}

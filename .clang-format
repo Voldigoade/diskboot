@@ -8,3 +8,4 @@ AlignConsecutiveAssignments: Consecutive
 AlignConsecutiveDeclarations: Consecutive
 AllowShortFunctionsOnASingleLine: Empty
 SortIncludes: false
+FixNamespaceComments: false

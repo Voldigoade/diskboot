@@ -29,4 +29,4 @@ public:
         return storage_;
     }
 };
-} // namespace diskboot
+}

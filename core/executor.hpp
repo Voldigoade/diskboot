@@ -20,4 +20,4 @@ struct Execution {
 void      verify_layout(const Disk &current, const Disk &expected);
 Execution execute_partitions(const Plan &plan, Backend &backend, const JournalSink &persist);
 Disk      revalidate(Backend &backend, const Identity &identity, const Disk &expected);
-} // namespace diskboot
+}

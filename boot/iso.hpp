@@ -23,4 +23,4 @@ public:
     std::vector<unsigned char> file(const std::string &name, Bytes maximum);
 };
 std::string ubuntu_config(const std::string &marker);
-} // namespace diskboot
+}

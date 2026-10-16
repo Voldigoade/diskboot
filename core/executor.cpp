@@ -91,4 +91,4 @@ Execution execute_partitions(const Plan &plan, Backend &backend, const JournalSi
     checkpoint("partitions-verified");
     return state;
 }
-} // namespace diskboot
+}

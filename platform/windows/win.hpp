@@ -33,4 +33,4 @@ struct Firmware {
     Bytes       ram         = 0;
 };
 Firmware firmware();
-} // namespace diskboot
+}

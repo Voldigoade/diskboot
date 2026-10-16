@@ -93,4 +93,4 @@ Plan        make_plan(const Inventory &inventory, const Identity &target, const 
                       const std::string &source_guid, bool allow_virtual = false);
 void        validate_plan(const Plan &plan);
 std::string summarize(const Plan &plan);
-} // namespace diskboot
+}

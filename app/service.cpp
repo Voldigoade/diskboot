@@ -75,9 +75,16 @@ std::filesystem::path prepare_virtual(const Request &request, const Plan &approv
             "ISO changed after review");
     const auto host = firmware();
     require(host.uefi, "UEFI host required");
-    require(host.secure_boot == "disabled",
-            "Laboratory profile has no verified Secure Boot chain; enabled or unknown state is refused");
-    require(host.ram >= image.metadata.ram_required, "Insufficient physical RAM for candidate toram strategy");
+    if (request.guest_secure_boot.empty()) {
+        require(host.secure_boot == "disabled",
+                "Laboratory profile has no verified Secure Boot chain; enabled or unknown state is refused");
+        require(host.ram >= image.metadata.ram_required, "Insufficient physical RAM for candidate toram strategy");
+    } else {
+        require(request.guest_secure_boot == "disabled",
+                "The candidate profile is available only for an explicitly Secure-Boot-disabled disposable guest");
+        require(request.guest_ram >= image.metadata.ram_required,
+                "Insufficient declared guest RAM for candidate toram strategy");
+    }
     VirtualBackend backend(request.lab_vhd);
     backend.authorize(approved.target);
     const auto directory    = state_directory();
@@ -95,8 +102,10 @@ std::filesystem::path prepare_virtual(const Request &request, const Plan &approv
     };
     auto state                = execute_partitions(approved, backend, persist);
     state.journal["firmware"] = {{"uefi", host.uefi}, {"secure_boot", host.secure_boot}, {"ram_bytes", host.ram}};
-    state.journal["files"]    = Json::array();
-    auto checkpoint           = [&](const std::string &phase) {
+    state.journal["requested_guest"] = {
+        {"secure_boot", request.guest_secure_boot}, {"ram_bytes", request.guest_ram}, {"verified", false}};
+    state.journal["files"] = Json::array();
+    auto checkpoint        = [&](const std::string &phase) {
         state.journal["phase"]    = phase;
         state.journal["expected"] = state.expected;
         persist(state.journal);
@@ -111,7 +120,6 @@ std::filesystem::path prepare_virtual(const Request &request, const Plan &approv
             const auto partition = *it;
             auto       mount = directory / (stable_id(approved.target) + (op.type == EspType ? "-efi" : "-recovery"));
             require(!std::filesystem::exists(mount), "Stale mount directory requires inspection");
-            std::filesystem::create_directory(mount);
             state.journal["mount"] = utf8(mount.wstring());
             checkpoint("mount-intent");
             backend.storage().mount(current, partition, mount);
@@ -224,4 +232,4 @@ Json verify_transaction(const std::filesystem::path &path) {
     }
     return {{"layout_verified", true}, {"file_hashes_verified", true}, {"boot_verified", false}};
 }
-} // namespace diskboot
+}
